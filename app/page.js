@@ -79,6 +79,9 @@ function getPassengerName(ticket) {
   const companionName = companion?.name?.trim();
   if (companionName) return companionName;
 
+  const bookingCompanionName = ticket.booking_companion?.name?.trim();
+  if (bookingCompanionName) return bookingCompanionName;
+
   const profile = ticket.profiles;
   const fullName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim();
   return fullName || 'Passageiro';
@@ -88,7 +91,24 @@ function getPassengerPhone(ticket) {
   const companion = Array.isArray(ticket.ticket_companions)
     ? ticket.ticket_companions[0]
     : ticket.ticket_companions;
-  return companion?.phone || ticket.profiles?.phone_number || '';
+  return companion?.phone || ticket.booking_companion?.phone || ticket.profiles?.phone_number || '';
+}
+
+function getBookingCompanion(bookingDetails, ticket) {
+  const trips = [
+    bookingDetails?.outbound_trip,
+    bookingDetails?.return_trip,
+  ].filter(Boolean);
+  const bookingTrip = trips.find((trip) => trip.trip_id === ticket?.trip_id);
+  const companions = bookingTrip?.companions || {};
+  return companions[String(ticket?.seat_number)] || companions[Number(ticket?.seat_number)] || null;
+}
+
+function applyBookingCompanions(tickets, bookingDetails) {
+  return (tickets || []).map((ticket) => ({
+    ...ticket,
+    booking_companion: getBookingCompanion(bookingDetails, ticket),
+  }));
 }
 
 function routeLabel(trip) {
@@ -399,6 +419,20 @@ export default function ScannerApp() {
         .order('seat_number', { ascending: true });
 
       if (groupError) throw groupError;
+      const { data: payment, error: paymentError } = firstTicket.payment_reference
+        ? await supabase
+            .from('payment_transactions')
+            .select('gateway_response')
+            .eq('transaction_id', firstTicket.payment_reference)
+            .maybeSingle()
+        : { data: null, error: null };
+
+      if (paymentError) throw paymentError;
+
+      const ticketsWithCompanions = applyBookingCompanions(
+        groupTickets || [],
+        payment?.gateway_response?.booking_details
+      );
       const ids = (groupTickets || []).map((ticket) => ticket.id);
       const { data: scans, error: scansError } = ids.length
         ? await supabase
@@ -415,7 +449,7 @@ export default function ScannerApp() {
         scannedTicketId: firstTicket.id,
         reference: firstTicket.payment_reference,
         trip: firstTicket.trips,
-        tickets: groupTickets || [],
+        tickets: ticketsWithCompanions,
         scans: scans || [],
         boardedIds,
       });

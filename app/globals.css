@@ -97,6 +97,23 @@ p {
   grid-template-columns: 1.05fr 0.95fr;
 }
 
+.scanner-layout {
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.scanner-home-card {
+  margin: 0 auto;
+  max-width: 760px;
+  width: 100%;
+}
+
+.dashboard-panel {
+  margin: 0 auto;
+  max-width: 980px;
+  width: 100%;
+}
+
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -219,6 +236,11 @@ p {
   font-size: 26px;
 }
 
+.dashboard-toggle {
+  margin-top: 12px;
+  width: 100%;
+}
+
 .route-row,
 .passenger-row {
   align-items: center;
@@ -322,6 +344,41 @@ p {
 .scan-result {
   display: grid;
   gap: 14px;
+  margin: 0 auto;
+  max-width: 760px;
+  width: 100%;
+}
+
+.scanned-passenger {
+  align-items: center;
+  background: rgba(223, 255, 132, 0.12);
+  border: 1px solid rgba(223, 255, 132, 0.38);
+  border-radius: 20px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr auto;
+  padding: 16px;
+}
+
+.scanned-passenger h3 {
+  font-size: 28px;
+  line-height: 1.05;
+  margin: 0 0 8px;
+}
+
+.scanned-passenger.is-boarded {
+  background: rgba(85, 232, 143, 0.13);
+  border-color: rgba(85, 232, 143, 0.46);
+}
+
+.confirm-main-button {
+  min-height: 58px;
+  min-width: 210px;
+}
+
+.group-list {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
 }
 
 .passenger-name {
@@ -352,13 +409,24 @@ p {
   }
 
   .dashboard-grid,
+  .scanner-layout,
   .stats {
     grid-template-columns: 1fr;
   }
 
   .route-row,
-  .passenger-row {
+  .passenger-row,
+  .scanned-passenger {
     grid-template-columns: 1fr;
+  }
+
+  .scanned-passenger h3 {
+    font-size: 25px;
+  }
+
+  .confirm-main-button {
+    min-width: 0;
+    width: 100%;
   }
 
   .manual-search {

@@ -110,6 +110,8 @@ export default function ScannerApp() {
   const [selectedDate, setSelectedDate] = useState(EVENT_DATES[0]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [stats, setStats] = useState([]);
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [statsLoaded, setStatsLoaded] = useState(false);
 
   const [manualInput, setManualInput] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -125,6 +127,7 @@ export default function ScannerApp() {
   const scanResultRef = useRef(null);
   const streamRef = useRef(null);
   const readerRef = useRef(null);
+  const controlsRef = useRef(null);
   const processingRef = useRef(false);
 
   useEffect(() => {
@@ -147,11 +150,6 @@ export default function ScannerApp() {
     init();
     return () => listener.subscription.unsubscribe();
   }, []);
-
-  useEffect(() => {
-    if (session && profile) loadStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, profile, selectedDate]);
 
   useEffect(() => {
     if (!cameraOpen) {
@@ -264,6 +262,7 @@ export default function ScannerApp() {
           .map((group) => ({ ...group, pending: group.total - group.boarded }))
           .sort((a, b) => a.time.localeCompare(b.time) || a.route.localeCompare(b.route))
       );
+      setStatsLoaded(true);
     } catch (error) {
       setScanError(`Erro ao carregar dashboard: ${error.message}`);
     } finally {
@@ -272,6 +271,10 @@ export default function ScannerApp() {
   }
 
   async function stopCamera() {
+    try {
+      controlsRef.current?.stop();
+    } catch {}
+    controlsRef.current = null;
     readerRef.current = null;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -307,19 +310,20 @@ export default function ScannerApp() {
       readerRef.current = reader;
       setCameraStatus('A ler QR...');
 
-      await reader.decodeFromVideoElement(videoRef.current, async (result) => {
+      const controls = await reader.decodeFromVideoElement(videoRef.current, (result) => {
         if (!result || processingRef.current) return;
         processingRef.current = true;
         const text = result.getText();
         setCameraStatus('QR lido');
         if (navigator.vibrate) navigator.vibrate(120);
+        stopCamera();
         setCameraOpen(false);
-        await stopCamera();
-        await lookupTicket(text);
+        lookupTicket(text);
         setTimeout(() => {
           processingRef.current = false;
         }, 900);
       });
+      controlsRef.current = controls;
     } catch (error) {
       setIsScanning(false);
       setCameraError(
@@ -458,7 +462,7 @@ export default function ScannerApp() {
           unboardedIds.includes(ticket.id) ? { ...ticket, status: 'used' } : ticket
         )),
       });
-      loadStats();
+      if (statsLoaded) loadStats();
     } catch (error) {
       setScanError(`Erro ao confirmar embarque: ${error.message}`);
     } finally {
@@ -520,6 +524,20 @@ export default function ScannerApp() {
   }
 
   const displayName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || profile.role;
+  const resetStatsForDate = (date) => {
+    setSelectedDate(date);
+    setStats([]);
+    setStatsLoaded(false);
+  };
+  const openDashboard = () => {
+    setShowDashboard((current) => {
+      const next = !current;
+      if (next && !statsLoaded && !statsLoading) {
+        loadStats();
+      }
+      return next;
+    });
+  };
 
   return (
     <main className="app-shell">
@@ -545,14 +563,14 @@ export default function ScannerApp() {
       {scanError && <div className="notice notice-error">{scanError}</div>}
       {scanMessage && <div className="notice notice-ok">{scanMessage}</div>}
 
-      <section className="grid dashboard-grid">
+      <section className="grid scanner-layout">
         <div className="grid">
-          <div className="card">
+          <div className="card scanner-home-card">
             <div className="card-header">
               <div>
                 <p className="eyebrow">Operacao</p>
-                <h2>Ler QR ou procurar bilhete</h2>
-                <p className="muted">O QR dos PDFs contem o ID do bilhete. Ao ler um bilhete, aparecem todos os passageiros da mesma referencia para esta viagem.</p>
+                <h2>Escanear bilhete</h2>
+                <p className="muted">Leia o QR do PDF ou digite a referencia. Depois confirme apenas quem entrou no autocarro.</p>
               </div>
               <ShieldCheck color="var(--lime)" />
             </div>
@@ -601,6 +619,7 @@ export default function ScannerApp() {
           <div ref={scanResultRef}>
             {scanResult && (
               <ScanResult
+                key={`${scanResult.scannedTicketId}-${scanResult.reference}`}
                 result={scanResult}
                 loading={lookupLoading}
                 onMarkOne={(ticketId) => markBoarded([ticketId])}
@@ -610,7 +629,7 @@ export default function ScannerApp() {
           </div>
         </div>
 
-        <aside className="grid">
+        <aside className="grid dashboard-panel">
           <div className="card">
             <div className="card-header">
               <div>
@@ -624,12 +643,12 @@ export default function ScannerApp() {
                 <button
                   key={date}
                   className={`btn ${selectedDate === date ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setSelectedDate(date)}
+                  onClick={() => resetStatsForDate(date)}
                 >
                   {date === '2026-06-20' ? '20 Jun' : '21 Jun'}
                 </button>
               ))}
-              <input className="input" style={{ maxWidth: 170 }} type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+              <input className="input" style={{ maxWidth: 170 }} type="date" value={selectedDate} onChange={(event) => resetStatsForDate(event.target.value)} />
             </div>
             <div className="stats" style={{ marginTop: 14 }}>
               <div className="stat"><span className="muted small">Total</span><strong>{totals.total}</strong></div>
@@ -637,9 +656,12 @@ export default function ScannerApp() {
               <div className="stat"><span className="muted small">Faltam</span><strong>{totals.pending}</strong></div>
               <div className="stat"><span className="muted small">Rotas</span><strong>{stats.length}</strong></div>
             </div>
+            <button className="btn btn-ghost dashboard-toggle" onClick={openDashboard}>
+              {showDashboard ? 'Esconder rotas' : 'Ver rotas do dia'}
+            </button>
           </div>
 
-          <div className="card">
+          {showDashboard && <div className="card">
             <div className="card-header">
               <div>
                 <p className="eyebrow">Por hora e rota</p>
@@ -648,7 +670,8 @@ export default function ScannerApp() {
               {statsLoading && <Loader2 />}
             </div>
             <div style={{ marginTop: 12 }}>
-              {stats.length === 0 && <p className="muted">Sem bilhetes pagos para esta data.</p>}
+              {!statsLoaded && !statsLoading && <p className="muted">Toque em Atualizar para carregar os dados.</p>}
+              {statsLoaded && stats.length === 0 && <p className="muted">Sem bilhetes pagos para esta data.</p>}
               {stats.map((group) => (
                 <div className="route-row" key={`${group.time}-${group.route}`}>
                   <div>
@@ -662,7 +685,7 @@ export default function ScannerApp() {
                 </div>
               ))}
             </div>
-          </div>
+          </div>}
         </aside>
       </section>
     </main>
@@ -670,9 +693,13 @@ export default function ScannerApp() {
 }
 
 function ScanResult({ result, loading, onMarkOne, onMarkAll }) {
+  const [showGroup, setShowGroup] = useState(false);
   const allBoarded = result.tickets.every((ticket) => isBoarded(ticket, result.boardedIds));
   const boardedCount = result.tickets.filter((ticket) => isBoarded(ticket, result.boardedIds)).length;
   const pendingCount = result.tickets.length - boardedCount;
+  const scannedTicket = result.tickets.find((ticket) => ticket.id === result.scannedTicketId) || result.tickets[0];
+  const scannedBoarded = scannedTicket ? isBoarded(scannedTicket, result.boardedIds) : false;
+  const otherTickets = result.tickets.filter((ticket) => ticket.id !== scannedTicket?.id);
 
   return (
     <section className="card scan-result">
@@ -687,9 +714,34 @@ function ScanResult({ result, loading, onMarkOne, onMarkAll }) {
         {allBoarded ? <CheckCircle2 color="var(--ok)" /> : <Users color="var(--lime)" />}
       </div>
 
+      {scannedTicket && (
+        <div className={`scanned-passenger ${scannedBoarded ? 'is-boarded' : ''}`}>
+          <div>
+            <p className="eyebrow">Passageiro lido</p>
+            <h3>{getPassengerName(scannedTicket)}</h3>
+            <p className="muted">
+              Lugar {scannedTicket.seat_number} - {scannedTicket.ticket_number}
+              {getPassengerPhone(scannedTicket) ? ` - ${getPassengerPhone(scannedTicket)}` : ''}
+            </p>
+          </div>
+          <div className="actions">
+            <span className={`pill ${scannedBoarded ? 'pill-ok' : 'pill-warn'}`}>
+              {scannedBoarded ? 'Embarcado' : 'Pendente'}
+            </span>
+            <button className="btn btn-primary confirm-main-button" onClick={() => onMarkOne(scannedTicket.id)} disabled={loading || scannedBoarded}>
+              {scannedBoarded ? <CheckCircle2 size={20} /> : <UserCheck size={20} />}
+              {scannedBoarded ? 'Confirmado' : 'Confirmar embarque'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="actions">
+        <button className="btn btn-ghost" onClick={() => setShowGroup((value) => !value)}>
+          <Users size={18} /> {showGroup ? 'Esconder grupo' : `Ver grupo (${result.tickets.length})`}
+        </button>
         <button className="btn btn-lime" onClick={onMarkAll} disabled={loading || allBoarded}>
-          <UserCheck size={18} /> Marcar todos deste embarque
+          <UserCheck size={18} /> Confirmar grupo todo
         </button>
         <span className="pill pill-ok">{boardedCount} embarcado{boardedCount === 1 ? '' : 's'}</span>
         <span className="pill pill-warn">{pendingCount} pendente{pendingCount === 1 ? '' : 's'}</span>
@@ -699,8 +751,9 @@ function ScanResult({ result, loading, onMarkOne, onMarkAll }) {
         Confirme apenas quem entrou no autocarro. Quem nao for confirmado fica como pendente para saber quem nao embarcou.
       </p>
 
-      <div>
-        {result.tickets.map((ticket) => {
+      {showGroup && (
+      <div className="group-list">
+        {otherTickets.map((ticket) => {
           const boarded = isBoarded(ticket, result.boardedIds);
           return (
             <div className="passenger-row" key={ticket.id}>
@@ -724,6 +777,7 @@ function ScanResult({ result, loading, onMarkOne, onMarkAll }) {
           );
         })}
       </div>
+      )}
 
       {allBoarded && (
         <div className="notice notice-ok">

@@ -122,6 +122,7 @@ export default function ScannerApp() {
   const [cameraStatus, setCameraStatus] = useState('Pronto para ler QR');
   const [isScanning, setIsScanning] = useState(false);
   const videoRef = useRef(null);
+  const scanResultRef = useRef(null);
   const streamRef = useRef(null);
   const readerRef = useRef(null);
   const processingRef = useRef(false);
@@ -289,8 +290,9 @@ export default function ScannerApp() {
         audio: false,
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 640, max: 960 },
+          height: { ideal: 480, max: 720 },
+          focusMode: { ideal: 'continuous' },
         },
       });
 
@@ -404,6 +406,9 @@ export default function ScannerApp() {
         boardedIds,
       });
       setManualInput('');
+      setTimeout(() => {
+        scanResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 80);
     } catch (error) {
       setScanError(`Erro ao validar bilhete: ${error.message}`);
     } finally {
@@ -573,11 +578,12 @@ export default function ScannerApp() {
           </div>
 
           {cameraOpen && (
-            <div className="card">
-              <div className="card-header">
+            <div className="card scanner-panel">
+              <div className="card-header scanner-panel-header">
                 <div>
                   <p className="eyebrow">Camera</p>
                   <h2>{cameraStatus}</h2>
+                  <p className="small muted">Aproxime o QR a 15-25 cm e mantenha parado.</p>
                 </div>
                 <button className="btn btn-ghost" onClick={() => setCameraOpen(false)}>Fechar</button>
               </div>
@@ -592,14 +598,16 @@ export default function ScannerApp() {
             </div>
           )}
 
-          {scanResult && (
-            <ScanResult
-              result={scanResult}
-              loading={lookupLoading}
-              onMarkOne={(ticketId) => markBoarded([ticketId])}
-              onMarkAll={() => markBoarded(scanResult.tickets.map((ticket) => ticket.id))}
-            />
-          )}
+          <div ref={scanResultRef}>
+            {scanResult && (
+              <ScanResult
+                result={scanResult}
+                loading={lookupLoading}
+                onMarkOne={(ticketId) => markBoarded([ticketId])}
+                onMarkAll={() => markBoarded(scanResult.tickets.map((ticket) => ticket.id))}
+              />
+            )}
+          </div>
         </div>
 
         <aside className="grid">

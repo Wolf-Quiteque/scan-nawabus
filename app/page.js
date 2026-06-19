@@ -129,6 +129,7 @@ export default function ScannerApp() {
   const readerRef = useRef(null);
   const controlsRef = useRef(null);
   const processingRef = useRef(false);
+  const lastScanRef = useRef({ value: '', at: 0 });
 
   useEffect(() => {
     const init = async () => {
@@ -311,20 +312,28 @@ export default function ScannerApp() {
       setCameraStatus('A ler QR...');
 
       const controls = await reader.decodeFromVideoElement(videoRef.current, (result) => {
-        if (!result || processingRef.current) return;
+        if (!result) return;
+        const text = parseScannedValue(result.getText());
+        const now = Date.now();
+        const isDuplicate =
+          lastScanRef.current.value === text && now - lastScanRef.current.at < 3500;
+        if (!text || processingRef.current || isDuplicate) return;
+
         processingRef.current = true;
-        const text = result.getText();
+        lastScanRef.current = { value: text, at: now };
         setCameraStatus('QR lido');
         if (navigator.vibrate) navigator.vibrate(120);
         stopCamera();
         setCameraOpen(false);
-        lookupTicket(text);
-        setTimeout(() => {
-          processingRef.current = false;
-        }, 900);
+        lookupTicket(text, { clearExistingResult: false }).finally(() => {
+          setTimeout(() => {
+            processingRef.current = false;
+          }, 1800);
+        });
       });
       controlsRef.current = controls;
     } catch (error) {
+      processingRef.current = false;
       setIsScanning(false);
       setCameraError(
         error.name === 'NotAllowedError'
@@ -334,14 +343,15 @@ export default function ScannerApp() {
     }
   }
 
-  async function lookupTicket(inputValue = manualInput) {
+  async function lookupTicket(inputValue = manualInput, options = {}) {
+    const { clearExistingResult = true } = options;
     const value = parseScannedValue(inputValue);
     if (!value) return;
 
     setLookupLoading(true);
     setScanError('');
     setScanMessage('');
-    setScanResult(null);
+    if (clearExistingResult) setScanResult(null);
 
     try {
       const select = `

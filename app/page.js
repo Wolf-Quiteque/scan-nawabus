@@ -271,10 +271,12 @@ export default function ScannerApp() {
         const route = routeLabel(trip);
         const key = `${time}|${route}`;
         if (!groups.has(key)) {
-          groups.set(key, { time, route, total: 0, boarded: 0 });
+          groups.set(key, { time, route, total: 0, scanned: 0, confirmed: 0, boarded: 0 });
         }
         const group = groups.get(key);
         group.total += 1;
+        if (boardedIds.has(ticket.id)) group.scanned += 1;
+        if (ticket.status === 'used') group.confirmed += 1;
         if (ticket.status === 'used' || boardedIds.has(ticket.id)) group.boarded += 1;
       }
 
@@ -518,10 +520,12 @@ export default function ScannerApp() {
     return stats.reduce(
       (acc, group) => ({
         total: acc.total + group.total,
+        scanned: acc.scanned + group.scanned,
+        confirmed: acc.confirmed + group.confirmed,
         boarded: acc.boarded + group.boarded,
         pending: acc.pending + group.pending,
       }),
-      { total: 0, boarded: 0, pending: 0 }
+      { total: 0, scanned: 0, confirmed: 0, boarded: 0, pending: 0 }
     );
   }, [stats]);
 
@@ -697,6 +701,8 @@ export default function ScannerApp() {
             <div className="stats" style={{ marginTop: 14 }}>
               <div className="stat"><span className="muted small">Total</span><strong>{totals.total}</strong></div>
               <div className="stat"><span className="muted small">Embarcados</span><strong>{totals.boarded}</strong></div>
+              <div className="stat"><span className="muted small">Bilhetes lidos</span><strong>{totals.scanned}</strong></div>
+              <div className="stat"><span className="muted small">Confirmados</span><strong>{totals.confirmed}</strong></div>
               <div className="stat"><span className="muted small">Faltam</span><strong>{totals.pending}</strong></div>
               <div className="stat"><span className="muted small">Rotas</span><strong>{stats.length}</strong></div>
             </div>
@@ -723,6 +729,8 @@ export default function ScannerApp() {
                     <p className="small muted">{group.total} passageiros</p>
                   </div>
                   <div className="actions">
+                    <span className="pill">{group.scanned} lidos</span>
+                    <span className="pill">{group.confirmed} confirmados</span>
                     <span className="pill pill-ok">{group.boarded} ok</span>
                     <span className="pill pill-warn">{group.pending} faltam</span>
                   </div>

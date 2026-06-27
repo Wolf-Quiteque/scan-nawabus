@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import {
-  CalendarDays,
   Camera,
   CheckCircle2,
   Loader2,
@@ -537,19 +536,6 @@ export default function ScannerApp() {
     }
   }
 
-  const totals = useMemo(() => {
-    return stats.reduce(
-      (acc, group) => ({
-        total: acc.total + group.total,
-        scanned: acc.scanned + group.scanned,
-        confirmed: acc.confirmed + group.confirmed,
-        boarded: acc.boarded + group.boarded,
-        pending: acc.pending + group.pending,
-      }),
-      { total: 0, scanned: 0, confirmed: 0, boarded: 0, pending: 0 }
-    );
-  }, [stats]);
-
   const selectedRoute = useMemo(
     () => stats.find((group) => group.key === selectedRouteKey) || stats[0] || null,
     [stats, selectedRouteKey]
@@ -693,49 +679,31 @@ export default function ScannerApp() {
           <div className="card">
             <div className="card-header">
               <div>
-                <p className="eyebrow">Hoje</p>
-                <h2>Rotas com passageiros</h2>
+                <p className="eyebrow">Rota selecionada</p>
+                <h2>{selectedRoute ? `${selectedRoute.time} - ${selectedRoute.route}` : 'Sem rotas hoje'}</h2>
                 <p className="muted small">{selectedDate}</p>
               </div>
-              <CalendarDays color="var(--orange)" />
+              <Users color="var(--lime)" />
             </div>
-            <div className="stats" style={{ marginTop: 14 }}>
-              <div className="stat"><span className="muted small">Bilhetes vendidos</span><strong>{totals.total}</strong></div>
-              <div className="stat"><span className="muted small">Embarcados</span><strong>{totals.boarded}</strong></div>
-              <div className="stat"><span className="muted small">Faltam</span><strong>{totals.pending}</strong></div>
-              <div className="stat"><span className="muted small">Rotas</span><strong>{stats.length}</strong></div>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              {statsLoading && <p className="muted"><Loader2 size={16} /> A carregar rotas...</p>}
-              {statsLoaded && stats.length === 0 && <p className="muted">Sem bilhetes pagos para esta data.</p>}
-              {stats.map((group) => (
-                <button
-                  className={`route-card ${selectedRoute?.key === group.key ? 'is-selected' : ''}`}
-                  key={group.key}
-                  onClick={() => setSelectedRouteKey(group.key)}
-                >
-                  <div>
-                    <strong>{group.time} - {group.route}</strong>
-                    <p className="small muted">{group.total} compraram bilhete</p>
-                  </div>
-                  <div className="route-card-metrics">
-                    <span className="pill pill-ok">{group.boarded} ok</span>
-                    <span className="pill pill-warn">{group.pending} faltam</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
 
-          {selectedRoute && (
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  <p className="eyebrow">Rota selecionada</p>
-                  <h2>{selectedRoute.time} - {selectedRoute.route}</h2>
-                </div>
-                <Users color="var(--lime)" />
+            {stats.length > 1 && (
+              <div className="field" style={{ marginTop: 14 }}>
+                <label>Escolher rota</label>
+                <select className="input" value={selectedRoute?.key || ''} onChange={(event) => setSelectedRouteKey(event.target.value)}>
+                  {stats.map((group) => (
+                    <option key={group.key} value={group.key}>
+                      {group.time} - {group.route}
+                    </option>
+                  ))}
+                </select>
               </div>
+            )}
+
+            {statsLoading && <p className="muted"><Loader2 size={16} /> A carregar rotas...</p>}
+            {statsLoaded && stats.length === 0 && <p className="muted">Sem bilhetes pagos para esta data.</p>}
+
+            {selectedRoute && (
+              <>
               <div className="stats route-detail-stats" style={{ marginTop: 14 }}>
                 <div className="stat"><span className="muted small">Compraram</span><strong>{selectedRoute.total}</strong></div>
                 <div className="stat"><span className="muted small">Embarcados</span><strong>{selectedRoute.boarded}</strong></div>
@@ -745,8 +713,9 @@ export default function ScannerApp() {
                 <span className="pill">{selectedRoute.scanned} bilhetes lidos</span>
                 <span className="pill">{selectedRoute.confirmed} confirmados</span>
               </div>
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </aside>
       </section>
     </main>

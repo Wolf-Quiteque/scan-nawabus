@@ -241,38 +241,6 @@ p {
   width: 100%;
 }
 
-.route-card {
-  align-items: center;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  color: var(--text);
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 1fr auto;
-  padding: 14px;
-  text-align: left;
-  width: 100%;
-}
-
-.route-card:hover,
-.route-card.is-selected {
-  background: rgba(255, 138, 0, 0.18);
-  border-color: rgba(255, 138, 0, 0.52);
-}
-
-.route-card + .route-card {
-  margin-top: 10px;
-}
-
-.route-card-metrics {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
 .route-detail-stats {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -453,14 +421,9 @@ p {
   }
 
   .route-row,
-  .route-card,
   .passenger-row,
   .scanned-passenger {
     grid-template-columns: 1fr;
-  }
-
-  .route-card-metrics {
-    justify-content: flex-start;
   }
 
   .scanned-passenger h3 {

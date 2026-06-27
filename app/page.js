@@ -544,8 +544,8 @@ export default function ScannerApp() {
   if (authLoading) {
     return (
       <main className="login">
-        <div className="card login-card">
-          <Loader2 size={26} />
+        <div className="card login-card loading-card">
+          <Loader2 className="spin" size={32} />
           <p className="muted">A carregar scanner...</p>
         </div>
       </main>
@@ -606,8 +606,12 @@ export default function ScannerApp() {
         </div>
       </header>
 
-      {scanError && <div className="notice notice-error">{scanError}</div>}
-      {scanMessage && <div className="notice notice-ok">{scanMessage}</div>}
+      {(scanError || scanMessage) && (
+        <div className="notice-stack">
+          {scanError && <div className="notice notice-error">{scanError}</div>}
+          {scanMessage && <div className="notice notice-ok">{scanMessage}</div>}
+        </div>
+      )}
 
       <section className="grid scanner-layout">
         <div className="grid">
@@ -620,7 +624,7 @@ export default function ScannerApp() {
               </div>
               <ShieldCheck color="var(--lime)" />
             </div>
-            <div className="actions mobile-sticky-action" style={{ marginTop: 16 }}>
+            <div className="scanner-primary-action">
               <button className="btn btn-primary scan-main-button" onClick={() => setCameraOpen(true)}>
                 <Camera size={19} /> Abrir camera
               </button>

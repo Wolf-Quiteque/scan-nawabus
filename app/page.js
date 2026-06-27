@@ -19,7 +19,15 @@ import {
 import { supabase } from '@/lib/supabase';
 
 const ALLOWED_ROLES = new Set(['admin', 'agent', 'driver', 'motorista']);
-const EVENT_DATES = ['2026-06-20', '2026-06-21'];
+
+function getTodayLuandaDate() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Luanda',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
 
 function normalizeLogin(value) {
   const trimmed = value.trim();
@@ -131,11 +139,11 @@ export default function ScannerApp() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [selectedDate, setSelectedDate] = useState(EVENT_DATES[0]);
+  const [selectedDate] = useState(getTodayLuandaDate);
   const [statsLoading, setStatsLoading] = useState(false);
   const [stats, setStats] = useState([]);
-  const [showDashboard, setShowDashboard] = useState(false);
   const [statsLoaded, setStatsLoaded] = useState(false);
+  const [selectedRouteKey, setSelectedRouteKey] = useState('');
 
   const [manualInput, setManualInput] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -188,6 +196,13 @@ export default function ScannerApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraOpen]);
 
+  useEffect(() => {
+    if (profile && !statsLoaded && !statsLoading) {
+      loadStats();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, selectedDate]);
+
   async function loadProfile(userId) {
     const { data, error } = await supabase
       .from('profiles')
@@ -232,9 +247,10 @@ export default function ScannerApp() {
       const range = luandaRange(selectedDate);
       const { data: trips, error: tripsError } = await supabase
         .from('trips')
-        .select('id, departure_time, arrival_time, routes(origin_city, destination_city)')
+        .select('id, departure_time, arrival_time, status, routes(origin_city, destination_city)')
         .gte('departure_time', range.start)
         .lt('departure_time', range.end)
+        .neq('status', 'cancelled')
         .order('departure_time', { ascending: true });
 
       if (tripsError) throw tripsError;
@@ -275,7 +291,7 @@ export default function ScannerApp() {
         const route = routeLabel(trip);
         const key = `${time}|${route}`;
         if (!groups.has(key)) {
-          groups.set(key, { time, route, total: 0, scanned: 0, confirmed: 0, boarded: 0 });
+          groups.set(key, { key, time, route, total: 0, scanned: 0, confirmed: 0, boarded: 0 });
         }
         const group = groups.get(key);
         group.total += 1;
@@ -284,14 +300,16 @@ export default function ScannerApp() {
         if (ticket.status === 'used' || boardedIds.has(ticket.id)) group.boarded += 1;
       }
 
-      setStats(
-        [...groups.values()]
-          .map((group) => ({ ...group, pending: group.total - group.boarded }))
-          .sort((a, b) => a.time.localeCompare(b.time) || a.route.localeCompare(b.route))
-      );
+      const nextStats = [...groups.values()]
+        .map((group) => ({ ...group, pending: group.total - group.boarded }))
+        .sort((a, b) => a.time.localeCompare(b.time) || a.route.localeCompare(b.route));
+      setStats(nextStats);
+      setSelectedRouteKey((current) => (
+        nextStats.some((group) => group.key === current) ? current : (nextStats[0]?.key || '')
+      ));
       setStatsLoaded(true);
     } catch (error) {
-      setScanError(`Erro ao carregar dashboard: ${error.message}`);
+      setScanError(`Erro ao carregar rotas de hoje: ${error.message}`);
     } finally {
       setStatsLoading(false);
     }
@@ -532,6 +550,11 @@ export default function ScannerApp() {
     );
   }, [stats]);
 
+  const selectedRoute = useMemo(
+    () => stats.find((group) => group.key === selectedRouteKey) || stats[0] || null,
+    [stats, selectedRouteKey]
+  );
+
   if (authLoading) {
     return (
       <main className="login">
@@ -575,20 +598,6 @@ export default function ScannerApp() {
   }
 
   const displayName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || profile.role;
-  const resetStatsForDate = (date) => {
-    setSelectedDate(date);
-    setStats([]);
-    setStatsLoaded(false);
-  };
-  const openDashboard = () => {
-    setShowDashboard((current) => {
-      const next = !current;
-      if (next && !statsLoaded && !statsLoading) {
-        loadStats();
-      }
-      return next;
-    });
-  };
 
   return (
     <main className="app-shell">
@@ -684,63 +693,60 @@ export default function ScannerApp() {
           <div className="card">
             <div className="card-header">
               <div>
-                <p className="eyebrow">Dashboard</p>
-                <h2>Resumo do dia</h2>
+                <p className="eyebrow">Hoje</p>
+                <h2>Rotas com passageiros</h2>
+                <p className="muted small">{selectedDate}</p>
               </div>
               <CalendarDays color="var(--orange)" />
             </div>
-            <div className="actions" style={{ marginTop: 12 }}>
-              {EVENT_DATES.map((date) => (
-                <button
-                  key={date}
-                  className={`btn ${selectedDate === date ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => resetStatsForDate(date)}
-                >
-                  {date === '2026-06-20' ? '20 Jun' : '21 Jun'}
-                </button>
-              ))}
-              <input className="input" style={{ maxWidth: 170 }} type="date" value={selectedDate} onChange={(event) => resetStatsForDate(event.target.value)} />
-            </div>
             <div className="stats" style={{ marginTop: 14 }}>
-              <div className="stat"><span className="muted small">Total</span><strong>{totals.total}</strong></div>
+              <div className="stat"><span className="muted small">Bilhetes vendidos</span><strong>{totals.total}</strong></div>
               <div className="stat"><span className="muted small">Embarcados</span><strong>{totals.boarded}</strong></div>
-              <div className="stat"><span className="muted small">Bilhetes lidos</span><strong>{totals.scanned}</strong></div>
-              <div className="stat"><span className="muted small">Confirmados</span><strong>{totals.confirmed}</strong></div>
               <div className="stat"><span className="muted small">Faltam</span><strong>{totals.pending}</strong></div>
               <div className="stat"><span className="muted small">Rotas</span><strong>{stats.length}</strong></div>
             </div>
-            <button className="btn btn-ghost dashboard-toggle" onClick={openDashboard}>
-              {showDashboard ? 'Esconder rotas' : 'Ver rotas do dia'}
-            </button>
-          </div>
-
-          {showDashboard && <div className="card">
-            <div className="card-header">
-              <div>
-                <p className="eyebrow">Por hora e rota</p>
-                <h2>Passageiros</h2>
-              </div>
-              {statsLoading && <Loader2 />}
-            </div>
             <div style={{ marginTop: 12 }}>
-              {!statsLoaded && !statsLoading && <p className="muted">Toque em Atualizar para carregar os dados.</p>}
+              {statsLoading && <p className="muted"><Loader2 size={16} /> A carregar rotas...</p>}
               {statsLoaded && stats.length === 0 && <p className="muted">Sem bilhetes pagos para esta data.</p>}
               {stats.map((group) => (
-                <div className="route-row" key={`${group.time}-${group.route}`}>
+                <button
+                  className={`route-card ${selectedRoute?.key === group.key ? 'is-selected' : ''}`}
+                  key={group.key}
+                  onClick={() => setSelectedRouteKey(group.key)}
+                >
                   <div>
                     <strong>{group.time} - {group.route}</strong>
-                    <p className="small muted">{group.total} passageiros</p>
+                    <p className="small muted">{group.total} compraram bilhete</p>
                   </div>
-                  <div className="actions">
-                    <span className="pill">{group.scanned} lidos</span>
-                    <span className="pill">{group.confirmed} confirmados</span>
+                  <div className="route-card-metrics">
                     <span className="pill pill-ok">{group.boarded} ok</span>
                     <span className="pill pill-warn">{group.pending} faltam</span>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
-          </div>}
+          </div>
+
+          {selectedRoute && (
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <p className="eyebrow">Rota selecionada</p>
+                  <h2>{selectedRoute.time} - {selectedRoute.route}</h2>
+                </div>
+                <Users color="var(--lime)" />
+              </div>
+              <div className="stats route-detail-stats" style={{ marginTop: 14 }}>
+                <div className="stat"><span className="muted small">Compraram</span><strong>{selectedRoute.total}</strong></div>
+                <div className="stat"><span className="muted small">Embarcados</span><strong>{selectedRoute.boarded}</strong></div>
+                <div className="stat"><span className="muted small">Faltam</span><strong>{selectedRoute.pending}</strong></div>
+              </div>
+              <div className="actions" style={{ marginTop: 12 }}>
+                <span className="pill">{selectedRoute.scanned} bilhetes lidos</span>
+                <span className="pill">{selectedRoute.confirmed} confirmados</span>
+              </div>
+            </div>
+          )}
         </aside>
       </section>
     </main>

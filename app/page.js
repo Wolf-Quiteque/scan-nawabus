@@ -48,6 +48,10 @@ function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
+function escapeIlikeValue(value) {
+  return String(value || '').replace(/[%_]/g, '\\$&');
+}
+
 function luandaRange(dateValue) {
   const start = new Date(`${dateValue}T00:00:00+01:00`);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
@@ -393,10 +397,9 @@ export default function ScannerApp() {
       let query = supabase.from('tickets').select(select);
       if (isUuid(value)) {
         query = query.eq('id', value);
-      } else if (value.toUpperCase().startsWith('TKT-')) {
-        query = query.eq('ticket_number', value);
       } else {
-        query = query.eq('payment_reference', value);
+        const pattern = `%${escapeIlikeValue(value)}%`;
+        query = query.or(`ticket_number.ilike.${pattern},payment_reference.ilike.${pattern}`);
       }
 
       const { data: firstRows, error: firstError } = await query.limit(1);

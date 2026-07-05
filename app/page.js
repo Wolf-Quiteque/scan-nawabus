@@ -164,23 +164,16 @@ export default function ScannerApp() {
   const lastScanRef = useRef({ value: '', at: 0 });
 
   useEffect(() => {
-    const init = async () => {
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session);
-      if (data.session?.user) await loadProfile(data.session.user.id);
-      setAuthLoading(false);
-    };
-
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       if (nextSession?.user) {
-        await loadProfile(nextSession.user.id);
+        setTimeout(() => loadProfile(nextSession.user.id), 0);
       } else {
         setProfile(null);
       }
+      setAuthLoading(false);
     });
 
-    init();
     return () => listener.subscription.unsubscribe();
   }, []);
 

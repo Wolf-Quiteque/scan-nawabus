@@ -143,6 +143,7 @@ export default function ScannerApp() {
   const [stats, setStats] = useState([]);
   const [statsLoaded, setStatsLoaded] = useState(false);
   const [selectedRouteKey, setSelectedRouteKey] = useState('');
+  const [passengerList, setPassengerList] = useState(null);
 
   const [manualInput, setManualInput] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -283,16 +284,22 @@ export default function ScannerApp() {
       const boardedIds = new Set((scans || []).map((scan) => scan.ticket_id));
       const groups = new Map();
 
-      for (const ticket of tickets || []) {
-        const trip = tripMap.get(ticket.trip_id);
-        if (!trip) continue;
+      for (const trip of trips || []) {
         const time = formatLuandaTime(trip.departure_time);
         const route = routeLabel(trip);
         const key = `${time}|${route}`;
         if (!groups.has(key)) {
-          groups.set(key, { key, time, route, total: 0, scanned: 0, confirmed: 0, boarded: 0 });
+          groups.set(key, { key, time, route, tripIds: [], total: 0, scanned: 0, confirmed: 0, boarded: 0 });
         }
+        groups.get(key).tripIds.push(trip.id);
+      }
+
+      for (const ticket of tickets || []) {
+        const trip = tripMap.get(ticket.trip_id);
+        if (!trip) continue;
+        const key = `${formatLuandaTime(trip.departure_time)}|${routeLabel(trip)}`;
         const group = groups.get(key);
+        if (!group) continue;
         group.total += 1;
         if (boardedIds.has(ticket.id)) group.scanned += 1;
         if (ticket.status === 'used') group.confirmed += 1;
@@ -311,6 +318,84 @@ export default function ScannerApp() {
       setScanError(`Erro ao carregar rotas de hoje: ${error.message}`);
     } finally {
       setStatsLoading(false);
+    }
+  }
+
+  async function openPassengerList(type) {
+    if (!selectedRoute || !selectedRoute.tripIds?.length) return;
+    const route = selectedRoute;
+    setPassengerList({ type, route, loading: true, error: '', passengers: [] });
+
+    try {
+      const select = `
+        id,
+        ticket_number,
+        payment_reference,
+        trip_id,
+        seat_number,
+        status,
+        payment_status,
+        ticket_companions(name, phone),
+        profiles!fk_passenger_id(first_name, last_name, phone_number)
+      `;
+
+      const { data: tickets, error } = await supabase
+        .from('tickets')
+        .select(select)
+        .in('trip_id', route.tripIds)
+        .eq('payment_status', 'paid')
+        .in('status', ['active', 'used'])
+        .order('seat_number', { ascending: true });
+
+      if (error) throw error;
+
+      const ids = (tickets || []).map((ticket) => ticket.id);
+      const { data: scans, error: scansError } = ids.length
+        ? await supabase
+            .from('ticket_scans')
+            .select('ticket_id')
+            .in('ticket_id', ids)
+            .eq('scan_type', 'boarding')
+        : { data: [], error: null };
+
+      if (scansError) throw scansError;
+      const boardedIds = new Set((scans || []).map((scan) => scan.ticket_id));
+
+      const references = [...new Set((tickets || []).map((ticket) => ticket.payment_reference).filter(Boolean))];
+      const { data: payments, error: paymentsError } = references.length
+        ? await supabase
+            .from('payment_transactions')
+            .select('transaction_id, gateway_response')
+            .in('transaction_id', references)
+        : { data: [], error: null };
+
+      if (paymentsError) throw paymentsError;
+      const paymentsByRef = new Map((payments || []).map((payment) => [payment.transaction_id, payment]));
+
+      const enriched = (tickets || []).map((ticket) => ({
+        ...ticket,
+        booking_companion: getBookingCompanion(
+          paymentsByRef.get(ticket.payment_reference)?.gateway_response?.booking_details,
+          ticket
+        ),
+      }));
+
+      const passengers = enriched.filter((ticket) => {
+        const boarded = ticket.status === 'used' || boardedIds.has(ticket.id);
+        return type === 'confirmados' ? ticket.status === 'used' : !boarded;
+      });
+
+      setPassengerList((current) => (
+        current && current.type === type && current.route.key === route.key
+          ? { ...current, loading: false, passengers }
+          : current
+      ));
+    } catch (error) {
+      setPassengerList((current) => (
+        current && current.type === type && current.route.key === route.key
+          ? { ...current, loading: false, error: error.message }
+          : current
+      ));
     }
   }
 
@@ -711,17 +796,58 @@ export default function ScannerApp() {
               <div className="stats route-detail-stats" style={{ marginTop: 14 }}>
                 <div className="stat"><span className="muted small">Compraram</span><strong>{selectedRoute.total}</strong></div>
                 <div className="stat"><span className="muted small">Embarcados</span><strong>{selectedRoute.boarded}</strong></div>
-                <div className="stat"><span className="muted small">Faltam</span><strong>{selectedRoute.pending}</strong></div>
+                <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('faltam')}>
+                  <span className="muted small">Faltam</span><strong>{selectedRoute.pending}</strong>
+                </button>
               </div>
               <div className="actions" style={{ marginTop: 12 }}>
                 <span className="pill">{selectedRoute.scanned} bilhetes lidos</span>
-                <span className="pill">{selectedRoute.confirmed} confirmados</span>
+                <button type="button" className="pill pill-button" onClick={() => openPassengerList('confirmados')}>
+                  {selectedRoute.confirmed} confirmados
+                </button>
               </div>
               </>
             )}
           </div>
         </aside>
       </section>
+
+      {passengerList && (
+        <div className="scanner-panel">
+          <div className="scanner-panel-header">
+            <div>
+              <p className="eyebrow">{passengerList.type === 'confirmados' ? 'Confirmados' : 'Faltam embarcar'}</p>
+              <h2>{passengerList.route.time} - {passengerList.route.route}</h2>
+              {!passengerList.loading && !passengerList.error && (
+                <p className="small muted">{passengerList.passengers.length} passageiro(s)</p>
+              )}
+            </div>
+            <button className="btn btn-ghost" onClick={() => setPassengerList(null)}>Fechar</button>
+          </div>
+
+          {passengerList.loading && <p className="muted"><Loader2 size={16} className="spin" /> A carregar passageiros...</p>}
+          {passengerList.error && <div className="notice notice-error">{passengerList.error}</div>}
+          {!passengerList.loading && !passengerList.error && passengerList.passengers.length === 0 && (
+            <p className="muted">Nenhum passageiro nesta categoria.</p>
+          )}
+
+          {!passengerList.loading && !passengerList.error && passengerList.passengers.length > 0 && (
+            <div className="group-list">
+              {passengerList.passengers.map((ticket) => (
+                <div className="passenger-row" key={ticket.id}>
+                  <div>
+                    <p className="passenger-name">{getPassengerName(ticket)}</p>
+                    <p className="small muted">
+                      Lugar {ticket.seat_number} - {ticket.ticket_number}
+                      {getPassengerPhone(ticket) ? ` - ${getPassengerPhone(ticket)}` : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </main>
   );
 }

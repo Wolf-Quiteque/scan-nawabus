@@ -5,8 +5,10 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 import {
   Camera,
   CheckCircle2,
+  ChevronRight,
   Loader2,
   LogOut,
+  Phone,
   QrCode,
   RefreshCw,
   Search,
@@ -129,6 +131,13 @@ function routeLabel(trip) {
 function isBoarded(ticket, boardedIds) {
   return ticket.status === 'used' || boardedIds.has(ticket.id);
 }
+
+const PASSENGER_LIST_META = {
+  total: { label: 'Compraram', icon: Users, pillClass: 'pill' },
+  embarcados: { label: 'Embarcados', icon: UserCheck, pillClass: 'pill-ok' },
+  faltam: { label: 'Faltam embarcar', icon: XCircle, pillClass: 'pill-warn' },
+  confirmados: { label: 'Confirmados', icon: CheckCircle2, pillClass: 'pill-ok' },
+};
 
 export default function ScannerApp() {
   const [session, setSession] = useState(null);
@@ -317,7 +326,7 @@ export default function ScannerApp() {
   async function openPassengerList(type) {
     if (!selectedRoute || !selectedRoute.tripIds?.length) return;
     const route = selectedRoute;
-    setPassengerList({ type, route, loading: true, error: '', passengers: [] });
+    setPassengerList({ type, route, loading: true, error: '', passengers: [], boardedIds: new Set() });
 
     try {
       const select = `
@@ -375,12 +384,15 @@ export default function ScannerApp() {
 
       const passengers = enriched.filter((ticket) => {
         const boarded = ticket.status === 'used' || boardedIds.has(ticket.id);
-        return type === 'confirmados' ? ticket.status === 'used' : !boarded;
+        if (type === 'confirmados') return ticket.status === 'used';
+        if (type === 'embarcados') return boarded;
+        if (type === 'faltam') return !boarded;
+        return true;
       });
 
       setPassengerList((current) => (
         current && current.type === type && current.route.key === route.key
-          ? { ...current, loading: false, passengers }
+          ? { ...current, loading: false, passengers, boardedIds }
           : current
       ));
     } catch (error) {
@@ -787,10 +799,17 @@ export default function ScannerApp() {
             {selectedRoute && (
               <>
               <div className="stats route-detail-stats" style={{ marginTop: 14 }}>
-                <div className="stat"><span className="muted small">Compraram</span><strong>{selectedRoute.total}</strong></div>
-                <div className="stat"><span className="muted small">Embarcados</span><strong>{selectedRoute.boarded}</strong></div>
+                <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('total')}>
+                  <span className="muted small">Compraram</span><strong>{selectedRoute.total}</strong>
+                  <ChevronRight className="stat-chevron" size={16} />
+                </button>
+                <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('embarcados')}>
+                  <span className="muted small">Embarcados</span><strong>{selectedRoute.boarded}</strong>
+                  <ChevronRight className="stat-chevron" size={16} />
+                </button>
                 <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('faltam')}>
                   <span className="muted small">Faltam</span><strong>{selectedRoute.pending}</strong>
+                  <ChevronRight className="stat-chevron" size={16} />
                 </button>
               </div>
               <div className="actions" style={{ marginTop: 12 }}>
@@ -806,42 +825,77 @@ export default function ScannerApp() {
       </section>
 
       {passengerList && (
-        <div className="scanner-panel">
-          <div className="scanner-panel-header">
-            <div>
-              <p className="eyebrow">{passengerList.type === 'confirmados' ? 'Confirmados' : 'Faltam embarcar'}</p>
-              <h2>{passengerList.route.time} - {passengerList.route.route}</h2>
-              {!passengerList.loading && !passengerList.error && (
-                <p className="small muted">{passengerList.passengers.length} passageiro(s)</p>
-              )}
-            </div>
-            <button className="btn btn-ghost" onClick={() => setPassengerList(null)}>Fechar</button>
-          </div>
-
-          {passengerList.loading && <p className="muted"><Loader2 size={16} className="spin" /> A carregar passageiros...</p>}
-          {passengerList.error && <div className="notice notice-error">{passengerList.error}</div>}
-          {!passengerList.loading && !passengerList.error && passengerList.passengers.length === 0 && (
-            <p className="muted">Nenhum passageiro nesta categoria.</p>
-          )}
-
-          {!passengerList.loading && !passengerList.error && passengerList.passengers.length > 0 && (
-            <div className="group-list">
-              {passengerList.passengers.map((ticket) => (
-                <div className="passenger-row" key={ticket.id}>
-                  <div>
-                    <p className="passenger-name">{getPassengerName(ticket)}</p>
-                    <p className="small muted">
-                      Lugar {ticket.seat_number} - {ticket.ticket_number}
-                      {getPassengerPhone(ticket) ? ` - ${getPassengerPhone(ticket)}` : ''}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <PassengerListPanel
+          passengerList={passengerList}
+          onClose={() => setPassengerList(null)}
+        />
       )}
     </main>
+  );
+}
+
+function PassengerListPanel({ passengerList, onClose }) {
+  const meta = PASSENGER_LIST_META[passengerList.type] || PASSENGER_LIST_META.total;
+  const Icon = meta.icon;
+  const isEmpty = !passengerList.loading && !passengerList.error && passengerList.passengers.length === 0;
+  const hasResults = !passengerList.loading && !passengerList.error && passengerList.passengers.length > 0;
+
+  return (
+    <div className="card scanner-panel passenger-list-panel">
+      <div className="scanner-panel-header passenger-list-header">
+        <div className="passenger-list-heading">
+          <span className={`passenger-list-icon ${meta.pillClass}`}><Icon size={20} /></span>
+          <div>
+            <p className="eyebrow">{meta.label}</p>
+            <h2>{passengerList.route.time} - {passengerList.route.route}</h2>
+          </div>
+        </div>
+        <div className="actions">
+          {hasResults && (
+            <span className={`pill ${meta.pillClass}`}>
+              {passengerList.passengers.length} passageiro{passengerList.passengers.length === 1 ? '' : 's'}
+            </span>
+          )}
+          <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
+
+      {passengerList.loading && (
+        <p className="muted"><Loader2 size={16} className="spin" /> A carregar passageiros...</p>
+      )}
+      {passengerList.error && <div className="notice notice-error">{passengerList.error}</div>}
+      {isEmpty && <p className="muted">Nenhum passageiro nesta categoria.</p>}
+
+      {hasResults && (
+        <div className="group-list passenger-list-body">
+          {passengerList.passengers.map((ticket) => {
+            const boarded = isBoarded(ticket, passengerList.boardedIds);
+            const phone = getPassengerPhone(ticket);
+            return (
+              <div className="passenger-row" key={ticket.id}>
+                <div>
+                  <p className="passenger-name">{getPassengerName(ticket)}</p>
+                  <p className="small muted">
+                    Lugar {ticket.seat_number} - {ticket.ticket_number}
+                    {phone ? ` - ${phone}` : ''}
+                  </p>
+                </div>
+                <div className="actions passenger-row-actions">
+                  <span className={`pill ${boarded ? 'pill-ok' : 'pill-warn'}`}>
+                    {boarded ? 'Embarcado' : 'Pendente'}
+                  </span>
+                  {phone && (
+                    <a className="btn btn-ghost call-btn" href={`tel:${phone}`}>
+                      <Phone size={16} /> Ligar
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

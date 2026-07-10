@@ -123,6 +123,51 @@ p {
   padding: 18px;
 }
 
+.mode-grid {
+  display: grid;
+  gap: 14px;
+  margin: 24px auto;
+  max-width: 760px;
+}
+
+@media (min-width: 640px) {
+  .mode-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.mode-card {
+  align-items: center;
+  appearance: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  gap: 14px;
+  text-align: left;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.mode-card:hover {
+  border-color: var(--lime);
+  transform: translateY(-1px);
+}
+
+.mode-card-icon {
+  align-items: center;
+  background: rgba(223, 255, 132, 0.12);
+  border-radius: 14px;
+  color: var(--lime);
+  display: grid;
+  flex-shrink: 0;
+  height: 52px;
+  justify-content: center;
+  width: 52px;
+}
+
+.mode-card-text {
+  flex: 1;
+}
+
 .card-header {
   align-items: flex-start;
   display: flex;

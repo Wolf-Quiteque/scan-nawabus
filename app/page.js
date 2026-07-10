@@ -3,14 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import {
+  ArrowLeft,
   Camera,
   CheckCircle2,
   ChevronRight,
   Loader2,
   LogOut,
+  Luggage,
   Phone,
   QrCode,
   RefreshCw,
+  ScanLine,
   Search,
   ShieldCheck,
   UserCheck,
@@ -139,9 +142,17 @@ const PASSENGER_LIST_META = {
   confirmados: { label: 'Confirmados', icon: CheckCircle2, pillClass: 'pill-ok' },
 };
 
+const LUGGAGE_SIZES = [
+  { value: 'pequeno', label: 'Pequeno' },
+  { value: 'medio', label: 'Médio' },
+  { value: 'grande', label: 'Grande' },
+  { value: 'muito_grande', label: 'Muito Grande' },
+];
+
 export default function ScannerApp() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [mode, setMode] = useState(null); // null = chooser, 'embarque', 'bagagem'
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -241,6 +252,17 @@ export default function ScannerApp() {
     await stopCamera();
     await supabase.auth.signOut();
     setScanResult(null);
+  }
+
+  async function resetToChooser() {
+    await stopCamera();
+    setCameraOpen(false);
+    setScanResult(null);
+    setManualInput('');
+    setScanError('');
+    setScanMessage('');
+    setPassengerList(null);
+    setMode(null);
   }
 
   async function loadStats() {
@@ -626,6 +648,33 @@ export default function ScannerApp() {
     }
   }
 
+  async function addLuggage({ description, size, amountKz }) {
+    const ticket =
+      scanResult?.tickets?.find((item) => item.id === scanResult.scannedTicketId) ||
+      scanResult?.tickets?.[0];
+    if (!ticket || !profile) return false;
+
+    setScanError('');
+    setScanMessage('');
+
+    const { error } = await supabase.from('luggage').insert({
+      ticket_id: ticket.id,
+      description,
+      size,
+      amount_kz: amountKz,
+      status: 'pending',
+      created_by: profile.id,
+    });
+
+    if (error) {
+      setScanError(`Erro ao guardar bagagem: ${error.message}`);
+      return false;
+    }
+
+    setScanMessage('Bagagem adicionada. Pagamento pendente no embarque.');
+    return true;
+  }
+
   const selectedRoute = useMemo(
     () => stats.find((group) => group.key === selectedRouteKey) || stats[0] || null,
     [stats, selectedRouteKey]
@@ -679,17 +728,32 @@ export default function ScannerApp() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark"><QrCode size={24} /></div>
+          <div className="brand-mark">
+            {mode === 'bagagem' ? <Luggage size={24} /> : <QrCode size={24} />}
+          </div>
           <div>
             <p className="eyebrow">NawaBus Scanner</p>
-            <h1>Embarque Mangais</h1>
+            <h1>
+              {mode === null
+                ? 'Escolha uma operacao'
+                : mode === 'bagagem'
+                ? 'Adicionar Bagagem'
+                : 'Embarque Mangais'}
+            </h1>
             <p className="muted">Logado como {displayName} - {profile.role}</p>
           </div>
         </div>
         <div className="actions">
-          <button className="btn btn-ghost" onClick={loadStats} disabled={statsLoading}>
-            <RefreshCw size={18} /> Atualizar
-          </button>
+          {mode !== null && (
+            <button className="btn btn-ghost" onClick={resetToChooser}>
+              <ArrowLeft size={18} /> Voltar
+            </button>
+          )}
+          {mode === 'embarque' && (
+            <button className="btn btn-ghost" onClick={loadStats} disabled={statsLoading}>
+              <RefreshCw size={18} /> Atualizar
+            </button>
+          )}
           <button className="btn btn-danger" onClick={signOut}>
             <LogOut size={18} /> Sair
           </button>
@@ -703,128 +767,166 @@ export default function ScannerApp() {
         </div>
       )}
 
-      <section className="grid scanner-layout">
-        <div className="grid">
-          <div className="card scanner-home-card">
-            <div className="card-header">
-              <div>
-                <p className="eyebrow">Operacao</p>
-                <h2>Escanear bilhete</h2>
-                <p className="muted">Leia o QR do PDF ou digite a referencia. Depois confirme apenas quem entrou no autocarro.</p>
-              </div>
-              <ShieldCheck color="var(--lime)" />
-            </div>
-            <div className="scanner-primary-action">
-              <button className="btn btn-primary scan-main-button" onClick={() => setCameraOpen(true)}>
-                <Camera size={19} /> Abrir camera
-              </button>
-            </div>
-            <div className="grid manual-search" style={{ marginTop: 14 }}>
-              <input
-                className="input"
-                value={manualInput}
-                onChange={(event) => setManualInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') lookupTicket();
-                }}
-                placeholder="ID do bilhete, numero TKT ou referencia"
-              />
-              <button className="btn btn-lime" onClick={() => lookupTicket()} disabled={lookupLoading}>
-                {lookupLoading ? <Loader2 size={18} /> : <Search size={18} />} Procurar
-              </button>
-            </div>
-          </div>
+      {mode === null && (
+        <section className="mode-grid">
+          <button className="card mode-card" onClick={() => setMode('embarque')}>
+            <span className="mode-card-icon"><ScanLine size={28} /></span>
+            <span className="mode-card-text">
+              <h2>Scanear Embarque</h2>
+              <p className="muted small">Ler QR dos bilhetes e confirmar quem entrou no autocarro.</p>
+            </span>
+            <ChevronRight className="muted" />
+          </button>
+          <button className="card mode-card" onClick={() => setMode('bagagem')}>
+            <span className="mode-card-icon"><Luggage size={28} /></span>
+            <span className="mode-card-text">
+              <h2>Adicionar Bagagem</h2>
+              <p className="muted small">Ler o bilhete e registar bagagem para pagamento no embarque.</p>
+            </span>
+            <ChevronRight className="muted" />
+          </button>
+        </section>
+      )}
 
-          {cameraOpen && (
-            <div className="card scanner-panel">
-              <div className="card-header scanner-panel-header">
+      {mode !== null && (
+        <section className="grid scanner-layout">
+          <div className="grid">
+            <div className="card scanner-home-card">
+              <div className="card-header">
                 <div>
-                  <p className="eyebrow">Camera</p>
-                  <h2>{cameraStatus}</h2>
-                  <p className="small muted">Aproxime o QR a 15-25 cm e mantenha parado.</p>
+                  <p className="eyebrow">Operacao</p>
+                  <h2>{mode === 'bagagem' ? 'Escanear bilhete para bagagem' : 'Escanear bilhete'}</h2>
+                  <p className="muted">
+                    {mode === 'bagagem'
+                      ? 'Leia o QR do bilhete ou digite a referencia para registar a bagagem do passageiro.'
+                      : 'Leia o QR do PDF ou digite a referencia. Depois confirme apenas quem entrou no autocarro.'}
+                  </p>
                 </div>
-                <button className="btn btn-ghost" onClick={() => setCameraOpen(false)}>Fechar</button>
+                <ShieldCheck color="var(--lime)" />
               </div>
-              {cameraError && <div className="notice notice-error">{cameraError}</div>}
-              <div className="scanner-box">
-                <video ref={videoRef} className="scanner-video" muted playsInline />
-                <div className="scanner-frame" />
+              <div className="scanner-primary-action">
+                <button className="btn btn-primary scan-main-button" onClick={() => setCameraOpen(true)}>
+                  <Camera size={19} /> Abrir camera
+                </button>
               </div>
-              <p className="small muted" style={{ marginTop: 10 }}>
-                Use HTTPS no telemovel para a camera funcionar.
-              </p>
+              <div className="grid manual-search" style={{ marginTop: 14 }}>
+                <input
+                  className="input"
+                  value={manualInput}
+                  onChange={(event) => setManualInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') lookupTicket();
+                  }}
+                  placeholder="ID do bilhete, numero TKT ou referencia"
+                />
+                <button className="btn btn-lime" onClick={() => lookupTicket()} disabled={lookupLoading}>
+                  {lookupLoading ? <Loader2 size={18} /> : <Search size={18} />} Procurar
+                </button>
+              </div>
             </div>
+
+            {cameraOpen && (
+              <div className="card scanner-panel">
+                <div className="card-header scanner-panel-header">
+                  <div>
+                    <p className="eyebrow">Camera</p>
+                    <h2>{cameraStatus}</h2>
+                    <p className="small muted">Aproxime o QR a 15-25 cm e mantenha parado.</p>
+                  </div>
+                  <button className="btn btn-ghost" onClick={() => setCameraOpen(false)}>Fechar</button>
+                </div>
+                {cameraError && <div className="notice notice-error">{cameraError}</div>}
+                <div className="scanner-box">
+                  <video ref={videoRef} className="scanner-video" muted playsInline />
+                  <div className="scanner-frame" />
+                </div>
+                <p className="small muted" style={{ marginTop: 10 }}>
+                  Use HTTPS no telemovel para a camera funcionar.
+                </p>
+              </div>
+            )}
+
+            <div ref={scanResultRef}>
+              {scanResult && (
+                mode === 'bagagem' ? (
+                  <LuggagePanel
+                    key={scanResult.scannedTicketId}
+                    result={scanResult}
+                    loading={lookupLoading}
+                    onAdd={addLuggage}
+                  />
+                ) : (
+                  <ScanResult
+                    key={`${scanResult.scannedTicketId}-${scanResult.reference}`}
+                    result={scanResult}
+                    loading={lookupLoading}
+                    onMarkOne={(ticketId) => markBoarded([ticketId])}
+                    onMarkAll={() => markBoarded(scanResult.tickets.map((ticket) => ticket.id))}
+                  />
+                )
+              )}
+            </div>
+          </div>
+
+          {mode === 'embarque' && (
+            <aside className="grid dashboard-panel">
+              <div className="card">
+                <div className="card-header">
+                  <div>
+                    <p className="eyebrow">Rota selecionada</p>
+                    <h2>{selectedRoute ? `${selectedRoute.time} - ${selectedRoute.route}` : 'Sem rotas hoje'}</h2>
+                    <p className="muted small">{selectedDate}</p>
+                  </div>
+                  <Users color="var(--lime)" />
+                </div>
+
+                {stats.length > 1 && (
+                  <div className="field" style={{ marginTop: 14 }}>
+                    <label>Escolher rota</label>
+                    <select className="input" value={selectedRoute?.key || ''} onChange={(event) => setSelectedRouteKey(event.target.value)}>
+                      {stats.map((group) => (
+                        <option key={group.key} value={group.key}>
+                          {group.time} - {group.route}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {statsLoading && <p className="muted"><Loader2 size={16} /> A carregar rotas...</p>}
+                {statsLoaded && stats.length === 0 && <p className="muted">Sem bilhetes pagos para esta data.</p>}
+
+                {selectedRoute && (
+                  <>
+                  <div className="stats route-detail-stats" style={{ marginTop: 14 }}>
+                    <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('total')}>
+                      <span className="muted small">Compraram</span><strong>{selectedRoute.total}</strong>
+                      <ChevronRight className="stat-chevron" size={16} />
+                    </button>
+                    <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('embarcados')}>
+                      <span className="muted small">Embarcados</span><strong>{selectedRoute.boarded}</strong>
+                      <ChevronRight className="stat-chevron" size={16} />
+                    </button>
+                    <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('faltam')}>
+                      <span className="muted small">Faltam</span><strong>{selectedRoute.pending}</strong>
+                      <ChevronRight className="stat-chevron" size={16} />
+                    </button>
+                  </div>
+                  <div className="actions" style={{ marginTop: 12 }}>
+                    <span className="pill">{selectedRoute.scanned} bilhetes lidos</span>
+                    <button type="button" className="pill pill-button" onClick={() => openPassengerList('confirmados')}>
+                      {selectedRoute.confirmed} confirmados
+                    </button>
+                  </div>
+                  </>
+                )}
+              </div>
+            </aside>
           )}
+        </section>
+      )}
 
-          <div ref={scanResultRef}>
-            {scanResult && (
-              <ScanResult
-                key={`${scanResult.scannedTicketId}-${scanResult.reference}`}
-                result={scanResult}
-                loading={lookupLoading}
-                onMarkOne={(ticketId) => markBoarded([ticketId])}
-                onMarkAll={() => markBoarded(scanResult.tickets.map((ticket) => ticket.id))}
-              />
-            )}
-          </div>
-        </div>
-
-        <aside className="grid dashboard-panel">
-          <div className="card">
-            <div className="card-header">
-              <div>
-                <p className="eyebrow">Rota selecionada</p>
-                <h2>{selectedRoute ? `${selectedRoute.time} - ${selectedRoute.route}` : 'Sem rotas hoje'}</h2>
-                <p className="muted small">{selectedDate}</p>
-              </div>
-              <Users color="var(--lime)" />
-            </div>
-
-            {stats.length > 1 && (
-              <div className="field" style={{ marginTop: 14 }}>
-                <label>Escolher rota</label>
-                <select className="input" value={selectedRoute?.key || ''} onChange={(event) => setSelectedRouteKey(event.target.value)}>
-                  {stats.map((group) => (
-                    <option key={group.key} value={group.key}>
-                      {group.time} - {group.route}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {statsLoading && <p className="muted"><Loader2 size={16} /> A carregar rotas...</p>}
-            {statsLoaded && stats.length === 0 && <p className="muted">Sem bilhetes pagos para esta data.</p>}
-
-            {selectedRoute && (
-              <>
-              <div className="stats route-detail-stats" style={{ marginTop: 14 }}>
-                <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('total')}>
-                  <span className="muted small">Compraram</span><strong>{selectedRoute.total}</strong>
-                  <ChevronRight className="stat-chevron" size={16} />
-                </button>
-                <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('embarcados')}>
-                  <span className="muted small">Embarcados</span><strong>{selectedRoute.boarded}</strong>
-                  <ChevronRight className="stat-chevron" size={16} />
-                </button>
-                <button type="button" className="stat stat-clickable" onClick={() => openPassengerList('faltam')}>
-                  <span className="muted small">Faltam</span><strong>{selectedRoute.pending}</strong>
-                  <ChevronRight className="stat-chevron" size={16} />
-                </button>
-              </div>
-              <div className="actions" style={{ marginTop: 12 }}>
-                <span className="pill">{selectedRoute.scanned} bilhetes lidos</span>
-                <button type="button" className="pill pill-button" onClick={() => openPassengerList('confirmados')}>
-                  {selectedRoute.confirmed} confirmados
-                </button>
-              </div>
-              </>
-            )}
-          </div>
-        </aside>
-      </section>
-
-      {passengerList && (
+      {passengerList && mode === 'embarque' && (
         <PassengerListPanel
           passengerList={passengerList}
           onClose={() => setPassengerList(null)}
@@ -994,6 +1096,112 @@ function ScanResult({ result, loading, onMarkOne, onMarkAll }) {
       {result.tickets.some((ticket) => ticket.payment_status !== 'paid') && (
         <div className="notice notice-error">
           Existe bilhete sem pagamento confirmado neste grupo.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LuggagePanel({ result, loading, onAdd }) {
+  const [description, setDescription] = useState('');
+  const [size, setSize] = useState('pequeno');
+  const [amount, setAmount] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [added, setAdded] = useState([]);
+
+  const scannedTicket = result.tickets.find((ticket) => ticket.id === result.scannedTicketId) || result.tickets[0];
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setFormError('');
+
+    const trimmedDescription = description.trim();
+    if (!trimmedDescription) {
+      setFormError('Descreva o que o passageiro esta a levar.');
+      return;
+    }
+
+    const amountKz = Number(amount);
+    if (!Number.isFinite(amountKz) || amountKz < 0) {
+      setFormError('Indique um valor valido.');
+      return;
+    }
+
+    setSaving(true);
+    const ok = await onAdd({ description: trimmedDescription, size, amountKz });
+    setSaving(false);
+
+    if (ok) {
+      setAdded((current) => [...current, { description: trimmedDescription, size, amountKz }]);
+      setDescription('');
+      setAmount('');
+    }
+  }
+
+  return (
+    <section className="card scan-result">
+      <div className="card-header">
+        <div>
+          <p className="eyebrow">Passageiro lido</p>
+          <h2>{getPassengerName(scannedTicket)}</h2>
+          <p className="muted">
+            {routeLabel(result.trip)} - Lugar {scannedTicket?.seat_number} - {scannedTicket?.ticket_number}
+          </p>
+        </div>
+        <Luggage color="var(--lime)" />
+      </div>
+
+      <form className="grid" onSubmit={handleSubmit} style={{ marginTop: 14 }}>
+        <div className="field">
+          <label>Bagagem</label>
+          <textarea
+            className="input"
+            rows={3}
+            placeholder="O que esta a levar"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label>Tamanho</label>
+          <select className="input" value={size} onChange={(event) => setSize(event.target.value)}>
+            {LUGGAGE_SIZES.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Valor (Kz)</label>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            inputMode="numeric"
+            placeholder="0"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+          />
+        </div>
+        {formError && <div className="notice notice-error">{formError}</div>}
+        <button className="btn btn-primary" disabled={saving || loading}>
+          {saving ? <Loader2 size={18} className="spin" /> : <Luggage size={18} />} Adicionar
+        </button>
+      </form>
+
+      {added.length > 0 && (
+        <div className="group-list" style={{ marginTop: 14 }}>
+          {added.map((item, index) => (
+            <div className="passenger-row" key={index}>
+              <div>
+                <p className="passenger-name">{item.description}</p>
+                <p className="small muted">
+                  {LUGGAGE_SIZES.find((option) => option.value === item.size)?.label} - Kz {item.amountKz}
+                </p>
+              </div>
+              <span className="pill pill-warn">Pendente</span>
+            </div>
+          ))}
         </div>
       )}
     </section>

@@ -5,6 +5,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 import {
   ArrowLeft,
   Camera,
+  CalendarDays,
   CheckCircle2,
   ChevronRight,
   Loader2,
@@ -158,7 +159,7 @@ export default function ScannerApp() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [selectedDate] = useState(getTodayLuandaDate);
+  const [selectedDate, setSelectedDate] = useState(getTodayLuandaDate);
   const [statsLoading, setStatsLoading] = useState(false);
   const [stats, setStats] = useState([]);
   const [statsLoaded, setStatsLoaded] = useState(false);
@@ -210,7 +211,8 @@ export default function ScannerApp() {
   }, [cameraOpen]);
 
   useEffect(() => {
-    if (profile && !statsLoaded && !statsLoading) {
+    if (profile) {
+      setPassengerList(null);
       loadStats();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -339,7 +341,7 @@ export default function ScannerApp() {
       ));
       setStatsLoaded(true);
     } catch (error) {
-      setScanError(`Erro ao carregar rotas de hoje: ${error.message}`);
+      setScanError(`Erro ao carregar rotas para a data selecionada: ${error.message}`);
     } finally {
       setStatsLoading(false);
     }
@@ -874,10 +876,21 @@ export default function ScannerApp() {
                 <div className="card-header">
                   <div>
                     <p className="eyebrow">Rota selecionada</p>
-                    <h2>{selectedRoute ? `${selectedRoute.time} - ${selectedRoute.route}` : 'Sem rotas hoje'}</h2>
+                    <h2>{selectedRoute ? `${selectedRoute.time} - ${selectedRoute.route}` : 'Sem rotas na data selecionada'}</h2>
                     <p className="muted small">{selectedDate}</p>
                   </div>
-                  <Users color="var(--lime)" />
+                  <CalendarDays color="var(--lime)" />
+                </div>
+
+                <div className="field" style={{ marginTop: 14 }}>
+                  <label htmlFor="scanner-date">Data da viagem</label>
+                  <input
+                    id="scanner-date"
+                    className="input"
+                    type="date"
+                    value={selectedDate}
+                    onChange={(event) => setSelectedDate(event.target.value)}
+                  />
                 </div>
 
                 {stats.length > 1 && (

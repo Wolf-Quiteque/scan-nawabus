@@ -72,6 +72,7 @@ function luandaRange(dateValue) {
 }
 
 function formatLuandaDateTime(value) {
+  if (!value) return '-';
   return new Intl.DateTimeFormat('pt-PT', {
     timeZone: 'Africa/Luanda',
     day: '2-digit',
@@ -361,8 +362,11 @@ export default function ScannerApp() {
         seat_number,
         status,
         payment_status,
+        booking_time,
+        created_at,
         ticket_companions(name, phone),
-        profiles!fk_passenger_id(first_name, last_name, phone_number)
+        profiles!fk_passenger_id(first_name, last_name, phone_number),
+        trips(departure_time)
       `;
 
       const { data: tickets, error } = await supabase
@@ -993,6 +997,10 @@ function PassengerListPanel({ passengerList, onClose }) {
                   <p className="small muted">
                     Lugar {ticket.seat_number} - {ticket.ticket_number}
                     {phone ? ` - ${phone}` : ''}
+                  </p>
+                  <p className="small muted">
+                    Comprado: {formatLuandaDateTime(ticket.booking_time || ticket.created_at)}
+                    {' - '}Embarque: {formatLuandaDateTime(ticket.trips?.departure_time)}
                   </p>
                 </div>
                 <div className="actions passenger-row-actions">

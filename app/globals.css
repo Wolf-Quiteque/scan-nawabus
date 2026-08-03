@@ -535,6 +535,21 @@ p {
   color: #d8ffe4;
 }
 
+.transient-notice {
+  animation: notice-fade-out 8s ease forwards;
+}
+
+@keyframes notice-fade-out {
+  0%,
+  82% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
 .scan-result {
   display: grid;
   gap: 14px;

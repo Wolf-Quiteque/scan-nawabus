@@ -67,27 +67,31 @@ function escapeIlikeValue(value) {
 
 function luandaRange(dateValue) {
   const start = new Date(`${dateValue}T00:00:00+01:00`);
+  if (Number.isNaN(start.getTime())) return null;
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
 function formatLuandaDateTime(value) {
-  if (!value) return '-';
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return '-';
   return new Intl.DateTimeFormat('pt-PT', {
     timeZone: 'Africa/Luanda',
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function formatLuandaTime(value) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return '-';
   return new Intl.DateTimeFormat('pt-PT', {
     timeZone: 'Africa/Luanda',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function getPassengerName(ticket) {
@@ -219,6 +223,15 @@ export default function ScannerApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, selectedDate]);
 
+  useEffect(() => {
+    if (!scanError && !scanMessage) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      setScanError('');
+      setScanMessage('');
+    }, 8000);
+    return () => window.clearTimeout(timeoutId);
+  }, [scanError, scanMessage]);
+
   async function loadProfile(userId) {
     const { data, error } = await supabase
       .from('profiles')
@@ -270,8 +283,15 @@ export default function ScannerApp() {
 
   async function loadStats() {
     setStatsLoading(true);
+    setScanError('');
     try {
       const range = luandaRange(selectedDate);
+      if (!range) {
+        setStats([]);
+        setSelectedRouteKey('');
+        setStatsLoaded(true);
+        return;
+      }
       const { data: trips, error: tripsError } = await supabase
         .from('trips')
         .select('id, departure_time, arrival_time, status, routes(origin_city, destination_city)')
@@ -768,8 +788,8 @@ export default function ScannerApp() {
 
       {(scanError || scanMessage) && (
         <div className="notice-stack">
-          {scanError && <div className="notice notice-error">{scanError}</div>}
-          {scanMessage && <div className="notice notice-ok">{scanMessage}</div>}
+          {scanError && <div className="notice notice-error transient-notice">{scanError}</div>}
+          {scanMessage && <div className="notice notice-ok transient-notice">{scanMessage}</div>}
         </div>
       )}
 

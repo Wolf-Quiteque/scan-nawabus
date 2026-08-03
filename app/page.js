@@ -26,12 +26,14 @@ import { supabase } from '@/lib/supabase';
 const ALLOWED_ROLES = new Set(['admin', 'agent', 'driver', 'motorista']);
 
 function getTodayLuandaDate() {
-  return new Intl.DateTimeFormat('en-CA', {
+  const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Africa/Luanda',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date());
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function normalizeLogin(value) {
@@ -181,6 +183,7 @@ export default function ScannerApp() {
   const [cameraError, setCameraError] = useState('');
   const [cameraStatus, setCameraStatus] = useState('Pronto para ler QR');
   const [isScanning, setIsScanning] = useState(false);
+  const statsRequestRef = useRef(0);
   const videoRef = useRef(null);
   const scanResultRef = useRef(null);
   const streamRef = useRef(null);
@@ -282,14 +285,18 @@ export default function ScannerApp() {
   }
 
   async function loadStats() {
+    const requestId = statsRequestRef.current + 1;
+    statsRequestRef.current = requestId;
     setStatsLoading(true);
     setScanError('');
     try {
       const range = luandaRange(selectedDate);
       if (!range) {
-        setStats([]);
-        setSelectedRouteKey('');
-        setStatsLoaded(true);
+        if (requestId === statsRequestRef.current) {
+          setStats([]);
+          setSelectedRouteKey('');
+          setStatsLoaded(true);
+        }
         return;
       }
       const { data: trips, error: tripsError } = await supabase
@@ -303,7 +310,11 @@ export default function ScannerApp() {
       if (tripsError) throw tripsError;
       const tripIds = (trips || []).map((trip) => trip.id);
       if (tripIds.length === 0) {
-        setStats([]);
+        if (requestId === statsRequestRef.current) {
+          setStats([]);
+          setSelectedRouteKey('');
+          setStatsLoaded(true);
+        }
         return;
       }
 
@@ -356,15 +367,19 @@ export default function ScannerApp() {
       const nextStats = [...groups.values()]
         .map((group) => ({ ...group, pending: group.total - group.boarded }))
         .sort((a, b) => a.time.localeCompare(b.time) || a.route.localeCompare(b.route));
-      setStats(nextStats);
-      setSelectedRouteKey((current) => (
-        nextStats.some((group) => group.key === current) ? current : (nextStats[0]?.key || '')
-      ));
-      setStatsLoaded(true);
+      if (requestId === statsRequestRef.current) {
+        setStats(nextStats);
+        setSelectedRouteKey((current) => (
+          nextStats.some((group) => group.key === current) ? current : (nextStats[0]?.key || '')
+        ));
+        setStatsLoaded(true);
+      }
     } catch (error) {
-      setScanError(`Erro ao carregar rotas para a data selecionada: ${error.message}`);
+      if (requestId === statsRequestRef.current) {
+        setScanError(`Erro ao carregar rotas para a data selecionada: ${error.message}`);
+      }
     } finally {
-      setStatsLoading(false);
+      if (requestId === statsRequestRef.current) setStatsLoading(false);
     }
   }
 

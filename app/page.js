@@ -652,33 +652,28 @@ export default function ScannerApp() {
         return;
       }
 
-      const rows = unboardedIds.map((ticketId) => ({
-        ticket_id: ticketId,
-        driver_id: profile.id,
-        scan_type: 'boarding',
-        scanned_at: new Date().toISOString(),
-      }));
+      // board_tickets records the boarding scan and marks the ticket used in
+      // one step on the server, after checking this account may board
+      // passengers. Writing ticket_scans/tickets directly is not permitted.
+      const { data: results, error: boardError } = await supabase.rpc('board_tickets', {
+        p_ticket_ids: unboardedIds,
+      });
+      if (boardError) throw boardError;
 
-      const { error: scanError } = await supabase.from('ticket_scans').insert(rows);
-      if (scanError) throw scanError;
+      const boardedNow = (results || []).filter((row) => row.boarded || row.already_boarded).map((row) => row.ticket_id);
+      const refused = (results || []).filter((row) => row.reason);
+      setScanMessage(
+        refused.length
+          ? `${boardedNow.length} passageiro(s) embarcado(s). ${refused.length} bilhete(s) recusado(s): cancelado ou reembolsado.`
+          : `${boardedNow.length} passageiro(s) marcado(s) como embarcado(s).`
+      );
 
-      const { error: updateError } = await supabase
-        .from('tickets')
-        .update({ status: 'used' })
-        .in('id', unboardedIds);
-
-      if (updateError) {
-        setScanMessage('Embarque registado. Aviso: nao foi possivel mudar o estado do bilhete para used.');
-      } else {
-        setScanMessage(`${unboardedIds.length} passageiro(s) marcado(s) como embarcado(s).`);
-      }
-
-      const nextBoardedIds = new Set([...scanResult.boardedIds, ...unboardedIds]);
+      const nextBoardedIds = new Set([...scanResult.boardedIds, ...boardedNow]);
       setScanResult({
         ...scanResult,
         boardedIds: nextBoardedIds,
         tickets: scanResult.tickets.map((ticket) => (
-          unboardedIds.includes(ticket.id) ? { ...ticket, status: 'used' } : ticket
+          boardedNow.includes(ticket.id) ? { ...ticket, status: 'used' } : ticket
         )),
       });
       if (statsLoaded) loadStats();

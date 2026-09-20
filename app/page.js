@@ -662,19 +662,28 @@ export default function ScannerApp() {
 
       const boardedNow = (results || []).filter((row) => row.boarded || row.already_boarded).map((row) => row.ticket_id);
       const refused = (results || []).filter((row) => row.reason);
-      setScanMessage(
-        refused.length
-          ? `${boardedNow.length} passageiro(s) embarcado(s). ${refused.length} bilhete(s) recusado(s): cancelado ou reembolsado.`
-          : `${boardedNow.length} passageiro(s) marcado(s) como embarcado(s).`
-      );
+      // Each refusal is told apart, because the driver has to say something
+      // different to the passenger in each case. An expired ticket is the
+      // no-show one: they missed their bus and must reprogram and pay the
+      // multa before they can travel.
+      const expiredIds = refused.filter((row) => row.reason === 'ticket_expired').map((row) => row.ticket_id);
+      const voided = refused.filter((row) => row.reason !== 'ticket_expired');
+      const parts = [`${boardedNow.length} passageiro(s) marcado(s) como embarcado(s).`];
+      if (expiredIds.length) {
+        parts.push(`${expiredIds.length} bilhete(s) expirado(s) — faltou à viagem. Precisa de reprogramar e pagar a multa.`);
+      }
+      if (voided.length) parts.push(`${voided.length} bilhete(s) cancelado(s) ou reembolsado(s).`);
+      setScanMessage(parts.join(' '));
 
       const nextBoardedIds = new Set([...scanResult.boardedIds, ...boardedNow]);
       setScanResult({
         ...scanResult,
         boardedIds: nextBoardedIds,
-        tickets: scanResult.tickets.map((ticket) => (
-          boardedNow.includes(ticket.id) ? { ...ticket, status: 'used' } : ticket
-        )),
+        tickets: scanResult.tickets.map((ticket) => {
+          if (boardedNow.includes(ticket.id)) return { ...ticket, status: 'used' };
+          if (expiredIds.includes(ticket.id)) return { ...ticket, status: 'expired' };
+          return ticket;
+        }),
       });
       if (statsLoaded) loadStats();
     } catch (error) {
@@ -1019,6 +1028,7 @@ function PassengerListPanel({ passengerList, onClose }) {
         <div className="group-list passenger-list-body">
           {passengerList.passengers.map((ticket) => {
             const boarded = isBoarded(ticket, passengerList.boardedIds);
+            const expired = ticket.status === 'expired';
             const phone = getPassengerPhone(ticket);
             return (
               <div className="passenger-row" key={ticket.id}>
@@ -1034,8 +1044,8 @@ function PassengerListPanel({ passengerList, onClose }) {
                   </p>
                 </div>
                 <div className="actions passenger-row-actions">
-                  <span className={`pill ${boarded ? 'pill-ok' : 'pill-warn'}`}>
-                    {boarded ? 'Embarcado' : 'Pendente'}
+                  <span className={`pill ${boarded ? 'pill-ok' : expired ? 'pill-danger' : 'pill-warn'}`}>
+                    {boarded ? 'Embarcado' : expired ? 'Expirado' : 'Pendente'}
                   </span>
                   {phone && (
                     <a className="btn btn-ghost call-btn" href={`tel:${phone}`}>
@@ -1059,6 +1069,8 @@ function ScanResult({ result, loading, onMarkOne, onMarkAll }) {
   const pendingCount = result.tickets.length - boardedCount;
   const scannedTicket = result.tickets.find((ticket) => ticket.id === result.scannedTicketId) || result.tickets[0];
   const scannedBoarded = scannedTicket ? isBoarded(scannedTicket, result.boardedIds) : false;
+  // A no-show past its validity: the server refuses it, so do not offer the button.
+  const scannedExpired = scannedTicket?.status === 'expired';
   const otherTickets = result.tickets.filter((ticket) => ticket.id !== scannedTicket?.id);
 
   return (
@@ -1085,12 +1097,12 @@ function ScanResult({ result, loading, onMarkOne, onMarkAll }) {
             </p>
           </div>
           <div className="actions">
-            <span className={`pill ${scannedBoarded ? 'pill-ok' : 'pill-warn'}`}>
-              {scannedBoarded ? 'Embarcado' : 'Pendente'}
+            <span className={`pill ${scannedBoarded ? 'pill-ok' : scannedExpired ? 'pill-danger' : 'pill-warn'}`}>
+              {scannedBoarded ? 'Embarcado' : scannedExpired ? 'Expirado' : 'Pendente'}
             </span>
-            <button className="btn btn-primary confirm-main-button" onClick={() => onMarkOne(scannedTicket.id)} disabled={loading || scannedBoarded}>
+            <button className="btn btn-primary confirm-main-button" onClick={() => onMarkOne(scannedTicket.id)} disabled={loading || scannedBoarded || scannedExpired}>
               {scannedBoarded ? <CheckCircle2 size={20} /> : <UserCheck size={20} />}
-              {scannedBoarded ? 'Confirmado' : 'Confirmar embarque'}
+              {scannedBoarded ? 'Confirmado' : scannedExpired ? 'Bilhete expirado' : 'Confirmar embarque'}
             </button>
           </div>
         </div>
@@ -1115,6 +1127,7 @@ function ScanResult({ result, loading, onMarkOne, onMarkAll }) {
       <div className="group-list">
         {otherTickets.map((ticket) => {
           const boarded = isBoarded(ticket, result.boardedIds);
+          const expired = ticket.status === 'expired';
           return (
             <div className="passenger-row" key={ticket.id}>
               <div>
@@ -1125,10 +1138,10 @@ function ScanResult({ result, loading, onMarkOne, onMarkAll }) {
                 </p>
               </div>
               <div className="actions">
-                <span className={`pill ${boarded ? 'pill-ok' : 'pill-warn'}`}>
-                  {boarded ? 'Embarcado' : 'Pendente'}
+                <span className={`pill ${boarded ? 'pill-ok' : expired ? 'pill-danger' : 'pill-warn'}`}>
+                  {boarded ? 'Embarcado' : expired ? 'Expirado' : 'Pendente'}
                 </span>
-                <button className="btn btn-primary" onClick={() => onMarkOne(ticket.id)} disabled={loading || boarded}>
+                <button className="btn btn-primary" onClick={() => onMarkOne(ticket.id)} disabled={loading || boarded || expired}>
                   {boarded ? <CheckCircle2 size={18} /> : <UserCheck size={18} />}
                   Confirmar
                 </button>
